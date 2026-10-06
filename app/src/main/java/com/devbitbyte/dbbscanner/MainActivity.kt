@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScannerHome() {
+    val context = LocalContext.current
     var pageCount by remember { mutableIntStateOf(0) }
     var pdfUri by remember { mutableStateOf<Uri?>(null) }
     var status by remember { mutableStateOf("Ready to scan") }
@@ -62,7 +64,7 @@ private fun ScannerHome() {
 
     fun startScan() {
         status = "Opening scanner..."
-        scanner.getStartScanIntent(this@MainActivity)
+        scanner.getStartScanIntent(context)
             .addOnSuccessListener { sender ->
                 launcher.launch(IntentSenderRequest.Builder(sender).build())
             }
@@ -92,7 +94,7 @@ private fun ScannerHome() {
                         putExtra(Intent.EXTRA_STREAM, uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    startActivity(Intent.createChooser(share, "Share scanned PDF"))
+                    context.startActivity(Intent.createChooser(share, "Share scanned PDF"))
                 }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.PictureAsPdf, null)
                     Spacer(Modifier.width(8.dp))
