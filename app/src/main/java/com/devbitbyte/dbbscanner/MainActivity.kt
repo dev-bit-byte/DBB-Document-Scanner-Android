@@ -110,6 +110,11 @@ private fun ScannerHome() {
                 }
             }
 
+            if (!localPdf.exists() || localPdf.length() <= 0L) {
+                localPdf.delete()
+                throw IllegalStateException("Scanner returned an empty PDF")
+            }
+
             pdfUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
