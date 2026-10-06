@@ -64,7 +64,7 @@ private fun ScannerHome() {
 
     fun startScan() {
         status = "Opening scanner..."
-        scanner.getStartScanIntent(context)
+        scanner.getStartScanIntent(context as Activity)
             .addOnSuccessListener { sender ->
                 launcher.launch(IntentSenderRequest.Builder(sender).build())
             }
