@@ -47,6 +47,7 @@ private fun ScannerHome() {
     var pdfUri by remember { mutableStateOf<Uri?>(null) }
     var pdfFileName by remember { mutableStateOf("DBB_Scan.pdf") }
     var status by remember { mutableStateOf("Ready to scan") }
+    var isScanning by remember { mutableStateOf(false) }
 
     val savePdfLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
@@ -79,6 +80,7 @@ private fun ScannerHome() {
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { activityResult ->
+        isScanning = false
         if (activityResult.resultCode != Activity.RESULT_OK) {
             status = "Scan cancelled"
             return@rememberLauncherForActivityResult
@@ -135,6 +137,8 @@ private fun ScannerHome() {
             return
         }
 
+        if (isScanning) return
+        isScanning = true
         status = "Opening scanner..."
 
         try {
@@ -154,9 +158,11 @@ private fun ScannerHome() {
                     launcher.launch(IntentSenderRequest.Builder(sender).build())
                 }
                 .addOnFailureListener {
+                    isScanning = false
                     status = "Scanner unavailable: ${it.localizedMessage ?: "Unknown error"}"
                 }
         } catch (t: Throwable) {
+            isScanning = false
             status = "Scanner could not start: ${t.localizedMessage ?: t.javaClass.simpleName}"
         }
     }
@@ -203,6 +209,7 @@ private fun ScannerHome() {
 
             Button(
                 onClick = { startScan() },
+                enabled = !isScanning,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Rounded.DocumentScanner, contentDescription = null)
