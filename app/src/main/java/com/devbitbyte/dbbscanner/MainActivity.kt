@@ -48,10 +48,12 @@ private fun ScannerHome() {
     var pdfFileName by remember { mutableStateOf("DBB_Scan.pdf") }
     var status by remember { mutableStateOf("Ready to scan") }
     var isScanning by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
 
     val savePdfLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { destinationUri ->
+        isSaving = false
         if (destinationUri == null) {
             status = "Save cancelled"
             return@rememberLauncherForActivityResult
@@ -219,7 +221,18 @@ private fun ScannerHome() {
 
             pdfUri?.let { uri ->
                 OutlinedButton(
-                    onClick = { savePdfLauncher.launch(pdfFileName) },
+                    onClick = {
+                        if (!isSaving) {
+                            isSaving = true
+                            try {
+                                savePdfLauncher.launch(pdfFileName)
+                            } catch (t: Throwable) {
+                                isSaving = false
+                                status = "Could not open save dialog: ${t.localizedMessage ?: t.javaClass.simpleName}"
+                            }
+                        }
+                    },
+                    enabled = !isSaving,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Rounded.Save, contentDescription = null)
