@@ -23,7 +23,7 @@ jobs:
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: DBB-PDF-Workspace-v0.1-debug
+          name: DBB-PDF-Workspace-v0.2-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
