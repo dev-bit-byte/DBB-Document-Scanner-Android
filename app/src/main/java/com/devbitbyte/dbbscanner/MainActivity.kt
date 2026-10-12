@@ -1,6 +1,5 @@
 package com.devbitbyte.pdfworkspace
 
-import android.app.DatePickerDialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color as NativeColor
@@ -16,7 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -51,13 +51,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.Calendar
+import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
 
@@ -76,6 +78,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PdfWorkspace() {
     val context = LocalContext.current
@@ -90,6 +93,20 @@ private fun PdfWorkspace() {
     var renameOpen by remember { mutableStateOf(false) }
     var savedName by remember { mutableStateOf("") }
     var clearOpen by remember { mutableStateOf(false) }
+    var resetOpen by remember { mutableStateOf(false) }
+    var removePdfId by remember { mutableStateOf<String?>(null) }
+    var longPressed by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var previewPage by remember { mutableStateOf<Pair<String, Int>?>(null) }
+
+    fun togglePage(sourceId: String, index: Int) {
+        val matches = output.filter { it.sourceId == sourceId && it.index == index }
+        if (matches.isEmpty()) {
+            output.add(PagePick(UUID.randomUUID().toString(), sourceId, index))
+        } else {
+            output.removeAll(matches.toSet())
+        }
+    }
+
 
     val savePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
@@ -187,6 +204,9 @@ private fun PdfWorkspace() {
                         OutlinedButton(
                             onClick = { clearOpen = true }, enabled = !busy && output.isNotEmpty()
                         ) { Text("Clear") }
+                        OutlinedButton(
+                            onClick = { resetOpen = true }, enabled = !busy && sources.isNotEmpty()
+                        ) { Text("Reset") }
                     }
                     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
                     if (savedName.isNotBlank()) {
@@ -230,17 +250,31 @@ private fun PdfWorkspace() {
                         val src = sources.firstOrNull { it.id == selected }
                         if (src != null) {
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Tap a page to append it",
-                                    Modifier.weight(1f), fontSize = 13.sp)
+                                Text(src.name, Modifier.weight(1f), maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                                TextButton(onClick = { removePdfId = src.id }) {
+                                    Icon(Icons.Default.Delete, "Remove this PDF")
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Remove PDF")
+                                }
+                            }
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Tap to select/unselect · hold to preview",
+                                    Modifier.weight(1f), fontSize = 11.sp)
                                 TextButton(onClick = {
                                     repeat(src.count) { n ->
-                                        output.add(PagePick(UUID.randomUUID().toString(), src.id, n))
+                                        if (output.none { it.sourceId == src.id && it.index == n }) {
+                                            output.add(PagePick(UUID.randomUUID().toString(), src.id, n))
+                                        }
                                     }
                                     pageTab = 1
-                                }) { Text("Add all pages") }
+                                }) { Text("Add all") }
                             }
                             LazyVerticalGrid(
                                 columns = GridCells.Fixed(3),
@@ -248,21 +282,26 @@ private fun PdfWorkspace() {
                                 contentPadding = PaddingValues(bottom = 20.dp)
                             ) {
                                 items(src.count) { index ->
-                                    val already = output.count { it.sourceId == src.id && it.index == index }
+                                    val isSelected = output.any {
+                                        it.sourceId == src.id && it.index == index
+                                    }
                                     Column(
                                         Modifier.padding(5.dp)
-                                            .border(1.dp, if (already > 0) Sky else Color.LightGray,
+                                            .border(if (isSelected) 2.dp else 1.dp,
+                                                if (isSelected) Sky else Color.LightGray,
                                                 RoundedCornerShape(10.dp))
-                                            .clickable {
-                                                output.add(PagePick(UUID.randomUUID().toString(),
-                                                    src.id, index))
-                                            }
+                                            .background(if (isSelected) Sunny.copy(alpha = 0.20f)
+                                                        else Color.Transparent, RoundedCornerShape(10.dp))
+                                            .combinedClickable(
+                                                onClick = { togglePage(src.id, index) },
+                                                onLongClick = { longPressed = src.id to index }
+                                            )
                                             .padding(5.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         PdfThumb(src.file, index, Modifier.fillMaxWidth().height(132.dp))
                                         Text("Page " + (index + 1) +
-                                            if (already > 0) "  ✓" else "",
+                                            if (isSelected) "  ✓" else "",
                                             fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                     }
                                 }
@@ -358,6 +397,131 @@ private fun PdfWorkspace() {
                 }
             )
         }
+        if (resetOpen) {
+            AlertDialog(
+                onDismissRequest = { resetOpen = false },
+                title = { Text("Reset PDF Workspace?") },
+                text = { Text("Remove all imported PDFs, selected pages and the prepared filename? Original files stored on your phone will not be deleted.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        sources.forEach { it.file.delete() }
+                        sources.clear()
+                        output.clear()
+                        selected = null
+                        previewPage = null
+                        longPressed = null
+                        savedName = ""
+                        pageTab = 0
+                        dark = false
+                        resetOpen = false
+                    }) { Text("Reset everything") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { resetOpen = false }) { Text("Cancel") }
+                }
+            )
+        }
+        val removeId = removePdfId
+        if (removeId != null) {
+            val toRemove = sources.firstOrNull { it.id == removeId }
+            AlertDialog(
+                onDismissRequest = { removePdfId = null },
+                title = { Text("Remove this PDF?") },
+                text = { Text("Remove " + (toRemove?.name ?: "selected PDF") +
+                    " and all its selected pages from this workspace? The original file will remain untouched.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (toRemove != null) {
+                            output.removeAll { it.sourceId == removeId }
+                            sources.remove(toRemove)
+                            toRemove.file.delete()
+                            if (selected == removeId) selected = sources.firstOrNull()?.id
+                            if (sources.isEmpty()) pageTab = 0
+                            if (previewPage?.first == removeId) previewPage = null
+                        }
+                        removePdfId = null
+                    }) { Text("Remove PDF") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { removePdfId = null }) { Text("Cancel") }
+                }
+            )
+        }
+        val pressed = longPressed
+        if (pressed != null) {
+            val source = sources.firstOrNull { it.id == pressed.first }
+            val isPicked = output.any {
+                it.sourceId == pressed.first && it.index == pressed.second
+            }
+            AlertDialog(
+                onDismissRequest = { longPressed = null },
+                title = { Text("Page " + (pressed.second + 1)) },
+                text = { Text(source?.name ?: "PDF page") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        previewPage = pressed
+                        longPressed = null
+                    }) { Text("View large") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            togglePage(pressed.first, pressed.second)
+                            longPressed = null
+                        }) { Text(if (isPicked) "Unselect" else "Select") }
+                        TextButton(onClick = { longPressed = null }) { Text("Cancel") }
+                    }
+                }
+            )
+        }
+        val fullView = previewPage
+        if (fullView != null) {
+            val previewSource = sources.firstOrNull { it.id == fullView.first }
+            if (previewSource != null) {
+                val picked = output.any { it.sourceId == fullView.first && it.index == fullView.second }
+                Dialog(
+                    onDismissRequest = { previewPage = null },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        Column(Modifier.fillMaxSize().padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Page " + (fullView.second + 1) + " of " + previewSource.count,
+                                        fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    Text(previewSource.name, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                                }
+                                IconButton(onClick = { previewPage = null }) {
+                                    Icon(Icons.Default.Close, "Close full-page preview")
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            PdfThumb(previewSource.file, fullView.second,
+                                Modifier.fillMaxWidth().weight(1f), renderWidth = 1100)
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = { togglePage(fullView.first, fullView.second) },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (picked) MaterialTheme.colorScheme.error else Sunny,
+                                    contentColor = if (picked) MaterialTheme.colorScheme.onError else Ink
+                                )
+                            ) {
+                                Text(if (picked) "Unselect page" else "Select page")
+                            }
+                            TextButton(
+                                onClick = { previewPage = null },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Back to pages") }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -369,11 +533,11 @@ private fun EmptyState(message: String) {
 }
 
 @Composable
-private fun PdfThumb(file: File, index: Int, modifier: Modifier = Modifier) {
-    var bitmap by remember(file.absolutePath, index) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(file.absolutePath, index) {
+private fun PdfThumb(file: File, index: Int, modifier: Modifier = Modifier, renderWidth: Int = 280) {
+    var bitmap by remember(file.absolutePath, index, renderWidth) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file.absolutePath, index, renderWidth) {
         bitmap = withContext(Dispatchers.IO) {
-            runCatching { drawPreview(file, index).asImageBitmap() }.getOrNull()
+            runCatching { drawPreview(file, index, renderWidth).asImageBitmap() }.getOrNull()
         }
     }
     Box(modifier.background(Color.White, RoundedCornerShape(5.dp)),
@@ -389,14 +553,12 @@ private fun PdfThumb(file: File, index: Int, modifier: Modifier = Modifier) {
 
 @Composable
 private fun SmartRenameDialog(onDismiss: () -> Unit, onApply: (String) -> Unit) {
-    val ctx = LocalContext.current
     var exam by remember { mutableStateOf("SSE") }
     var year by remember { mutableStateOf("") }
     var set by remember { mutableStateOf("A") }
     var answer by remember { mutableStateOf("AMA") }
     var day by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
-    val cal = Calendar.getInstance()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -420,15 +582,17 @@ private fun SmartRenameDialog(onDismiss: () -> Unit, onApply: (String) -> Unit) 
                             label = { Text(option) })
                     }
                 }
-                OutlinedButton(onClick = {
-                    DatePickerDialog(ctx, { _, y, m, d ->
-                        day = d.toString().padStart(2, '0') + "_" +
-                            (m + 1).toString().padStart(2, '0') + "_" + y
-                    }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH),
-                        cal.get(Calendar.DAY_OF_MONTH)).show()
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (day.isBlank()) "Choose exam date" else "Exam date: " + day)
-                }
+                OutlinedTextField(
+                    value = day,
+                    onValueChange = { day = it.filter { c ->
+                        c.isDigit() || c == '/' || c == '-' || c == '_'
+                    }.take(12) },
+                    label = { Text("Exam date (DD/MM/YYYY)") },
+                    placeholder = { Text("22/02/2026") },
+                    supportingText = { Text("Type 22/02/2026 or 22022026") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
                 Text("Answer-key type", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = answer == "AMA",
@@ -444,11 +608,20 @@ private fun SmartRenameDialog(onDismiss: () -> Unit, onApply: (String) -> Unit) 
             TextButton(onClick = {
                 val code = exam.trim().uppercase(Locale.ROOT)
                     .replace(Regex("[^A-Z0-9]+"), "_").trim('_')
-                if (code.isBlank() || year.length != 4 || day.isBlank()) {
-                    error = "Enter exam, 4-digit year and examination date."
+                val digits = day.filter(Char::isDigit)
+                val formattedDate = if (digits.length == 8) {
+                    val dd = digits.substring(0, 2).toInt()
+                    val mm = digits.substring(2, 4).toInt()
+                    val yyyy = digits.substring(4, 8).toInt()
+                    if (runCatching { LocalDate.of(yyyy, mm, dd) }.isSuccess) {
+                        String.format(Locale.ROOT, "%02d_%02d_%04d", dd, mm, yyyy)
+                    } else null
+                } else null
+                if (code.isBlank() || year.length != 4 || formattedDate == null) {
+                    error = "Enter an exam code, 4-digit year and valid DD/MM/YYYY date."
                 } else {
                     onApply("CGPSC_" + code + "_" + year + "_SET_" +
-                        set + "_DATE_" + day + "_" + answer + ".pdf")
+                        set + "_DATE_" + formattedDate + "_" + answer + ".pdf")
                 }
             }) { Text("Use filename") }
         },
@@ -476,13 +649,13 @@ private fun cacheSource(context: Context, uri: Uri): SourcePdf {
     }
 }
 
-private fun drawPreview(file: File, pageIndex: Int): Bitmap {
+private fun drawPreview(file: File, pageIndex: Int, requestedWidth: Int = 280): Bitmap {
     val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
     return PdfRenderer(fd).use { renderer ->
         renderer.openPage(pageIndex).use { page ->
-            val width = 280
+            val width = requestedWidth.coerceIn(180, 1400)
             val height = (width.toFloat() * page.height / page.width)
-                .toInt().coerceIn(120, 500)
+                .toInt().coerceIn(120, 2200)
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             bitmap.eraseColor(NativeColor.WHITE)
             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
