@@ -1,0 +1,46 @@
+name: DBB PDF Workspace Windows EXE
+
+on:
+  push:
+    branches:
+      - pdf-workspace-windows
+    paths:
+      - "windows/**"
+      - ".github/workflows/pdf-workspace-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: windows/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r windows/requirements.txt
+      - name: Run PDF engine tests
+        run: python -m unittest discover -s windows/tests -v
+      - name: Smoke-test GUI startup (offscreen)
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          python -c "import sys; sys.path.insert(0, 'windows'); from PySide6.QtWidgets import QApplication; from app import Workspace; a=QApplication([]); w=Workspace(); assert w.windowTitle().startswith('DBB PDF Workspace'); print('GUI smoke test passed')"
+      - name: Build Windows EXE
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name "DBB PDF Workspace" --collect-all pymupdf windows/app.py
+      - name: Upload portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: DBB-PDF-Workspace-Windows-v0.1
+          path: dist/DBB PDF Workspace.exe
+          if-no-files-found: error
+          retention-days: 14
